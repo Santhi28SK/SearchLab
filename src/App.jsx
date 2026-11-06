@@ -1,8 +1,8 @@
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import "./App.css";
 
-const initialNodes = [
+const nodes = [
   { id: "A", x: 80, y: 210 },
   { id: "B", x: 230, y: 85 },
   { id: "C", x: 230, y: 335 },
@@ -13,7 +13,7 @@ const initialNodes = [
   { id: "H", x: 810, y: 190 },
 ];
 
-const initialEdges = [
+const edges = [
   ["A", "B", 2],
   ["A", "C", 4],
   ["B", "D", 3],
@@ -28,266 +28,244 @@ const initialEdges = [
   ["G", "H", 1],
 ];
 
-function getAllPaths(start, goal) {
-  const graph = {};
-
-  initialNodes.forEach((node) => {
-    graph[node.id] = [];
-  });
-
-  initialEdges.forEach(([from, to, weight]) => {
-    graph[from].push({ node: to, weight });
-    graph[to].push({ node: from, weight });
-  });
-
-  const results = [];
-
-  function dfs(current, visited, path, cost) {
-    if (current === goal) {
-      results.push({ path, cost });
-      return;
-    }
-
-    graph[current].forEach((neighbor) => {
-      if (!visited.has(neighbor.node)) {
-        const nextVisited = new Set(visited);
-        nextVisited.add(neighbor.node);
-
-        dfs(
-          neighbor.node,
-          nextVisited,
-          [...path, neighbor.node],
-          cost + neighbor.weight
-        );
-      }
-    });
-  }
-
-  dfs(start, new Set([start]), [start], 0);
-
-  return results.sort(
-    (a, b) => a.cost - b.cost || a.path.length - b.path.length
-  );
+function createInitialState(start) {
+  return {
+    queue: [{ node: start, cost: 0, path: [start] }],
+    costs: { [start]: 0 },
+    parents: {},
+    expanded: [],
+    current: null,
+    path: [],
+    status: "running",
+    message: `Search started from node ${start}. The priority queue contains the starting node with cost 0.`,
+    step: 0,
+  };
 }
 
-function runUCS(start, goal) {
-  const graph = {};
+function executeOneStep(state, goal) {
+  if (state.status !== "running") return state;
 
-  initialNodes.forEach((node) => {
-    graph[node.id] = [];
-  });
-
-  initialEdges.forEach(([from, to, weight]) => {
-    graph[from].push({ node: to, weight });
-    graph[to].push({ node: from, weight });
-  });
-
-  const queue = [{ node: start, cost: 0, path: [start] }];
-  const bestCost = { [start]: 0 };
-  const expanded = [];
+  const queue = [...state.queue].sort((a, b) => a.cost - b.cost);
+  const expanded = [...state.expanded];
 
   while (queue.length > 0) {
-    queue.sort((a, b) => a.cost - b.cost);
     const current = queue.shift();
 
-    if (current.cost > bestCost[current.node]) continue;
+    // Ignore outdated or already-expanded entries.
+    if (current.cost !== state.costs[current.node]) continue;
+    if (expanded.includes(current.node)) continue;
 
     expanded.push(current.node);
 
     if (current.node === goal) {
       return {
-        path: current.path,
-        cost: current.cost,
+        ...state,
+        queue,
         expanded,
+        current: current.node,
+        path: current.path,
+        status: "found",
+        step: state.step + 1,
+        message: `Goal ${goal} reached! Its minimum path cost is ${current.cost}.`,
       };
     }
 
-    graph[current.node].forEach(({ node, weight }) => {
+    const costs = { ...state.costs };
+    const parents = { ...state.parents };
+
+    for (const [a, b, weight] of edges) {
+      let neighbor = null;
+
+      if (a === current.node) neighbor = b;
+      if (b === current.node) neighbor = a;
+
+      if (!neighbor || expanded.includes(neighbor)) continue;
+
       const newCost = current.cost + weight;
 
-      if (bestCost[node] === undefined || newCost < bestCost[node]) {
-        bestCost[node] = newCost;
+      if (costs[neighbor] === undefined || newCost < costs[neighbor]) {
+        costs[neighbor] = newCost;
+        parents[neighbor] = current.node;
 
         queue.push({
-          node,
+          node: neighbor,
           cost: newCost,
-          path: [...current.path, node],
+          path: [...current.path, neighbor],
         });
       }
-    });
+    }
+
+    queue.sort((a, b) => a.cost - b.cost);
+
+    return {
+      ...state,
+      queue,
+      costs,
+      parents,
+      expanded,
+      current: current.node,
+      path: [],
+      step: state.step + 1,
+      message: `Expanded ${current.node} at cumulative cost ${current.cost}. Its neighbours have been checked and the priority queue has been updated.`,
+    };
   }
 
-  return null;
+  return {
+    ...state,
+    queue: [],
+    expanded,
+    current: null,
+    status: "failed",
+    step: state.step + 1,
+    message: "The priority queue is empty. No path to the goal exists.",
+  };
 }
 
 function App() {
   const [start, setStart] = useState("A");
   const [goal, setGoal] = useState("D");
-  const [selectedPath, setSelectedPath] = useState(0);
-  const [ucsResult, setUcsResult] = useState(null);
+  const [search, setSearch] = useState(() => createInitialState("A"));
 
-  const paths = useMemo(
-    () => getAllPaths(start, goal),
-    [start, goal]
-  );
+  const resetSearch = (newStart = start, newGoal = goal) => {
+    setStart(newStart);
+    setGoal(newGoal);
+    setSearch(createInitialState(newStart));
+  };
 
-  const optimalCost = paths.length > 0 ? paths[0].cost : null;
+  const nextStep = () => {
+    setSearch((previous) => executeOneStep(previous, goal));
+  };
 
-  const optimalPaths = paths.filter(
-    (path) => path.cost === optimalCost
-  );
+  const runAll = () => {
+    setSearch((previous) => {
+      let result = previous;
+      let safety = 0;
 
-  const activePath = paths[selectedPath] || null;
+      while (result.status === "running" && safety < 30) {
+        result = executeOneStep(result, goal);
+        safety++;
+      }
 
-  function changeStart(value) {
-    setStart(value);
-    setSelectedPath(0);
-    setUcsResult(null);
-  }
+      return result;
+    });
+  };
 
-  function changeGoal(value) {
-    setGoal(value);
-    setSelectedPath(0);
-    setUcsResult(null);
-  }
-
-  function resetExplorer() {
-    setStart("A");
-    setGoal("D");
-    setSelectedPath(0);
-    setUcsResult(null);
-  }
-
-  const highlightedNodes = activePath?.path || [];
-  const highlightedEdges = [];
-
-  for (let i = 0; i < highlightedNodes.length - 1; i++) {
-    highlightedEdges.push([
-      highlightedNodes[i],
-      highlightedNodes[i + 1],
-    ]);
-  }
-
-  const ucsNodes = ucsResult?.path || [];
+  const pathSet = new Set(search.path);
+  const expandedSet = new Set(search.expanded);
 
   return (
     <div className="app">
-      <header className="header">
+      <header className="top-header">
         <div>
-          <p className="eyebrow">SEARCHLAB </p>
-          <h1>Path Explorer</h1>
+          <p className="eyebrow">SEARCHLAB / LEVEL 03</p>
+          <h1>Interactive UCS</h1>
           <p className="subtitle">
-            Explore routes, compare costs, and discover how
-            Uniform Cost Search finds the cheapest path.
+            Learn how Uniform Cost Search explores a weighted graph.
           </p>
         </div>
-        <div className="level-tag">LEVEL 02</div>
+        <div className="level-label">Level 3 · Step-by-step</div>
       </header>
 
-      <main>
-        <section className="controls panel">
-          <div>
-            <label htmlFor="start">Starting node</label>
+      <section className="control-bar">
+        <div className="select-group">
+          <label>
+            Start node
             <select
-              id="start"
               value={start}
-              onChange={(e) => changeStart(e.target.value)}
+              onChange={(e) => resetSearch(e.target.value, goal)}
             >
-              {initialNodes.map((node) => (
+              {nodes.map((node) => (
                 <option key={node.id} value={node.id}>
-                  Node {node.id}
+                  {node.id}
                 </option>
               ))}
             </select>
-          </div>
+          </label>
 
-          <div>
-            <label htmlFor="goal">Destination node</label>
+          <label>
+            Goal node
             <select
-              id="goal"
               value={goal}
-              onChange={(e) => changeGoal(e.target.value)}
+              onChange={(e) => resetSearch(start, e.target.value)}
             >
-              {initialNodes.map((node) => (
+              {nodes.map((node) => (
                 <option key={node.id} value={node.id}>
-                  Node {node.id}
+                  {node.id}
                 </option>
               ))}
             </select>
-          </div>
+          </label>
+        </div>
 
-          <button className="primary-button" onClick={() => {
-            setUcsResult(runUCS(start, goal));
-          }}>
-            Run UCS
+        <div className="action-buttons">
+          <button
+            className="primary-button"
+            onClick={nextStep}
+            disabled={search.status !== "running"}
+          >
+            Next Step →
           </button>
-
-          <button className="reset-button" onClick={resetExplorer}>
+          <button
+            className="secondary-button"
+            onClick={runAll}
+            disabled={search.status !== "running"}
+          >
+            Run All
+          </button>
+          <button
+            className="reset-button"
+            onClick={() => resetSearch()}
+          >
             Reset
           </button>
-        </section>
+        </div>
+      </section>
 
-        <section className="graph-section panel">
-          <div className="section-heading">
+      <main className="workspace">
+        <section className="graph-panel">
+          <div className="panel-heading">
             <div>
-              <h2>Weighted graph</h2>
-              <p>Select a route below to highlight it on the graph.</p>
+              <h2>Weighted Graph</h2>
+              <p>Watch nodes change as UCS progresses.</p>
             </div>
-            <span className="graph-count">8 Nodes · 12 Edges</span>
+            <span className="step-counter">Step {search.step}</span>
           </div>
 
-          <div className="graph-scroll">
-            <svg
-              className="graph"
-              viewBox="0 0 900 440"
-              role="img"
-              aria-label="Weighted graph with nodes A through H"
-            >
-              {initialEdges.map(([from, to, weight]) => {
-                const a = initialNodes.find((n) => n.id === from);
-                const b = initialNodes.find((n) => n.id === to);
-
-                const isHighlighted = highlightedEdges.some(
-                  ([x, y]) =>
-                    (x === from && y === to) ||
-                    (x === to && y === from)
-                );
-
-                const isUcsEdge = ucsNodes.some(
-                  (node, i) =>
-                    i < ucsNodes.length - 1 &&
-                    ((node === from && ucsNodes[i + 1] === to) ||
-                     (node === to && ucsNodes[i + 1] === from))
-                );
+          <div className="graph-container">
+            <svg viewBox="0 0 900 440" className="graph-svg">
+              {edges.map(([a, b, weight]) => {
+                const first = nodes.find((n) => n.id === a);
+                const second = nodes.find((n) => n.id === b);
+                const isPath =
+                  pathSet.has(a) &&
+                  pathSet.has(b) &&
+                  search.path.indexOf(b) === search.path.indexOf(a) + 1 ||
+                  pathSet.has(a) &&
+                  pathSet.has(b) &&
+                  search.path.indexOf(a) === search.path.indexOf(b) + 1;
 
                 return (
-                  <g key={`${from}-${to}`}>
+                  <g key={`${a}-${b}`}>
                     <line
-                      x1={a.x}
-                      y1={a.y}
-                      x2={b.x}
-                      y2={b.y}
-                      className={
-                        isUcsEdge
-                          ? "edge ucs-edge"
-                          : isHighlighted
-                          ? "edge active-edge"
-                          : "edge"
-                      }
+                      x1={first.x}
+                      y1={first.y}
+                      x2={second.x}
+                      y2={second.y}
+                      className={isPath ? "edge path-edge" : "edge"}
                     />
                     <rect
-                      x={(a.x + b.x) / 2 - 16}
-                      y={(a.y + b.y) / 2 - 12}
-                      width="32"
-                      height="24"
+                      x={(first.x + second.x) / 2 - 13}
+                      y={(first.y + second.y) / 2 - 12}
+                      width="26"
+                      height="23"
                       rx="6"
-                      className="weight-bg"
+                      className="weight-box"
                     />
                     <text
-                      x={(a.x + b.x) / 2}
-                      y={(a.y + b.y) / 2 + 5}
+                      x={(first.x + second.x) / 2}
+                      y={(first.y + second.y) / 2 + 4}
                       textAnchor="middle"
-                      className="weight-label"
+                      className="weight-text"
                     >
                       {weight}
                     </text>
@@ -295,9 +273,18 @@ function App() {
                 );
               })}
 
-              {initialNodes.map((node) => {
-                const isActive = highlightedNodes.includes(node.id);
-                const isUcs = ucsNodes.includes(node.id);
+              {nodes.map((node) => {
+                const isStart = node.id === start;
+                const isGoal = node.id === goal;
+                const isCurrent = search.current === node.id;
+                const isExpanded = expandedSet.has(node.id);
+
+                let className = "graph-node";
+                if (isExpanded) className += " expanded-node";
+                if (isCurrent) className += " current-node";
+                if (isStart) className += " start-node";
+                if (isGoal) className += " goal-node";
+                if (pathSet.has(node.id)) className += " path-node";
 
                 return (
                   <g key={node.id}>
@@ -305,25 +292,25 @@ function App() {
                       cx={node.x}
                       cy={node.y}
                       r="24"
-                      className={
-                        isUcs
-                          ? "node-circle ucs-node"
-                          : isActive
-                          ? "node-circle active-node"
-                          : node.id === start
-                          ? "node-circle start-node"
-                          : node.id === goal
-                          ? "node-circle goal-node"
-                          : "node-circle"
-                      }
+                      className={className}
                     />
                     <text
                       x={node.x}
                       y={node.y + 5}
                       textAnchor="middle"
-                      className="node-label"
+                      className="node-text"
                     >
                       {node.id}
+                    </text>
+                    <text
+                      x={node.x}
+                      y={node.y + 43}
+                      textAnchor="middle"
+                      className="node-cost"
+                    >
+                      {search.costs[node.id] !== undefined
+                        ? `Cost: ${search.costs[node.id]}`
+                        : "Not reached"}
                     </text>
                   </g>
                 );
@@ -332,158 +319,96 @@ function App() {
           </div>
 
           <div className="legend">
-            <span><i className="legend-start" /> Start</span>
-            <span><i className="legend-goal" /> Goal</span>
-            <span><i className="legend-active" /> Selected path</span>
-            <span><i className="legend-ucs" /> UCS result</span>
+            <span><i className="legend-dot start-dot" /> Start</span>
+            <span><i className="legend-dot expanded-dot" /> Expanded</span>
+            <span><i className="legend-dot current-dot" /> Current</span>
+            <span><i className="legend-dot goal-dot" /> Goal</span>
           </div>
         </section>
 
-        <section className="results-grid">
-          <div className="panel paths-panel">
-            <div className="section-heading">
-              <div>
-                <h2>Possible paths</h2>
-                <p>
-                  {start} to {goal} · Simple paths without repeated nodes
-                </p>
-              </div>
-              <span className="count-badge">{paths.length}</span>
-            </div>
+        <aside className="side-panel">
+          <section className="info-card">
+            <h2>Priority Queue</h2>
+            <p className="card-description">
+              Nodes waiting to be explored, ordered by lowest cost.
+            </p>
 
-            {paths.length === 0 ? (
-              <div className="empty-state">
-                No path exists between these nodes.
-              </div>
+            {search.queue.length === 0 ? (
+              <p className="empty-message">Queue is empty.</p>
             ) : (
-              <div className="path-list">
-                {paths.map((item, index) => {
-                  const isOptimal = item.cost === optimalCost;
-
-                  return (
-                    <button
-                      key={`${item.path.join("-")}-${index}`}
-                      className={`path-item ${
-                        selectedPath === index ? "selected-path" : ""
-                      }`}
-                      onClick={() => setSelectedPath(index)}
-                    >
-                      <div className="path-main">
-                        <span className="path-number">
-                          Path {index + 1}
-                        </span>
-                        <span className="path-nodes">
-                          {item.path.join(" → ")}
-                        </span>
-                      </div>
-
-                      <div className="path-right">
-                        {isOptimal && (
-                          <span className="optimal-label">Optimal</span>
-                        )}
-                        <strong>Cost: {item.cost}</strong>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="queue-list">
+                {[...search.queue]
+                  .sort((a, b) => a.cost - b.cost)
+                  .map((item, index) => (
+                    <div className="queue-item" key={`${item.node}-${index}`}>
+                      <span className="queue-position">{index + 1}</span>
+                      <strong>{item.node}</strong>
+                      <span className="queue-cost">Cost: {item.cost}</span>
+                    </div>
+                  ))}
               </div>
             )}
-          </div>
+          </section>
 
-          <div className="panel detail-panel">
-            <h2>Path details</h2>
-
-            {activePath ? (
-              <>
-                <p className="detail-caption">Selected route</p>
-                <div className="large-route">
-                  {activePath.path.join(" → ")}
-                </div>
-
-                <div className="cost-card">
-                  <span>Total path cost</span>
-                  <strong>{activePath.cost}</strong>
-                </div>
-
-                <div className="detail-info">
-                  <p>
-                    <strong>Number of edges:</strong>{" "}
-                    {activePath.path.length - 1}
-                  </p>
-                  <p>
-                    <strong>Optimal route:</strong>{" "}
-                    {activePath.cost === optimalCost ? "Yes" : "No"}
-                  </p>
-                  <p>
-                    <strong>Optimal paths found:</strong>{" "}
-                    {optimalPaths.length}
-                  </p>
-                </div>
-
-                <p className="explanation">
-                  {activePath.cost === optimalCost
-                    ? "This route has the lowest total cost among all possible simple paths."
-                    : `This route costs ${activePath.cost - optimalCost} more than the cheapest route.`}
-                </p>
-              </>
-            ) : (
-              <p className="empty-state">Select a valid route to see its details.</p>
-            )}
-          </div>
-        </section>
-
-        <section className="panel ucs-panel">
-          <div className="section-heading">
-            <div>
-              <h2>Uniform Cost Search</h2>
-              <p>
-                Run UCS to find an optimal route using cumulative path costs.
-              </p>
+          <section className="info-card">
+            <h2>Expansion Order</h2>
+            <p className="card-description">
+              Nodes already removed from the queue.
+            </p>
+            <div className="expanded-list">
+              {search.expanded.length === 0 ? (
+                <span className="empty-message">No nodes expanded yet.</span>
+              ) : (
+                search.expanded.map((node, index) => (
+                  <span className="expanded-chip" key={`${node}-${index}`}>
+                    {node}
+                  </span>
+                ))
+              )}
             </div>
-            <span className="ucs-tag">Algorithm</span>
-          </div>
+          </section>
 
-          {!ucsResult ? (
-            <div className="ucs-placeholder">
-              <p>
-                Ready to explore? Press <strong>Run UCS</strong> to calculate
-                the optimal path from {start} to {goal}.
-              </p>
+          <section className="info-card">
+            <h2>Current Step</h2>
+            <div className="current-node-display">
+              {search.current || "—"}
             </div>
-          ) : (
-            <div className="ucs-result">
-              <div>
-                <p className="detail-caption">UCS optimal path</p>
-                <div className="large-route">
-                  {ucsResult.path.join(" → ")}
-                </div>
-              </div>
-              <div className="cost-card">
-                <span>Minimum cost</span>
-                <strong>{ucsResult.cost}</strong>
-              </div>
-              <div className="detail-info">
-                <p>
-                  <strong>Expansion order:</strong>{" "}
-                  {ucsResult.expanded.join(" → ")}
-                </p>
-                <p>
-                  <strong>Optimal paths:</strong> {optimalPaths.length}
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="learning-note">
-            <strong>Remember:</strong> The Path Explorer lists all simple
-            paths for comparison. UCS does not need to enumerate every path.
-            It expands the lowest cumulative-cost node first.
-          </div>
-        </section>
+            <p className="card-description">
+              {search.current
+                ? `Current node: ${search.current}`
+                : "Press Next Step to begin exploring."}
+            </p>
+          </section>
+        </aside>
       </main>
 
-      <footer>
-        SEARCHLAB · LEARN BY EXPLORING
+      <section className="bottom-section">
+        <div className="explanation-card">
+          <h2>What's happening?</h2>
+          <p>{search.message}</p>
+        </div>
+
+        {search.status === "found" && (
+          <div className="result-card">
+            <h2>Optimal Path Found!</h2>
+            <p className="final-path">{search.path.join(" → ")}</p>
+            <p>
+              Total Cost:{" "}
+              <strong>{search.costs[goal]}</strong>
+            </p>
+          </div>
+        )}
+
+        {search.status === "failed" && (
+          <div className="result-card">
+            <h2>No path found</h2>
+            <p>Try selecting another start or goal node.</p>
+          </div>
+        )}
+      </section>
+
+      <footer className="footer">
+        SEARCHLAB · Learn by exploring, experimenting and understanding.
       </footer>
     </div>
   );
