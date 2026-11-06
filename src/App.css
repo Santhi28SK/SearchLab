@@ -1,0 +1,182 @@
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.app {
+  max-width: 1200px;
+  margin: auto;
+  padding: 25px;
+}
+
+header {
+  background: #1e293b;
+  color: white;
+  padding: 22px;
+  border-radius: 8px;
+}
+
+header h1 {
+  margin: 0 0 8px;
+}
+
+header p {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.intro {
+  background: white;
+  padding: 20px;
+  margin: 22px 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+.graph-panel,
+.controls {
+  background: white;
+  padding: 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.graph {
+  width: 100%;
+  margin-top: 15px;
+}
+
+.weight {
+  fill: #0f172a;
+  font-size: 16px;
+  font-weight: bold;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: white;
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+
+.node-label {
+  fill: white;
+  font-size: 17px;
+  font-weight: bold;
+  text-anchor: middle;
+}
+
+.controls label {
+  display: block;
+  margin: 18px 0 7px;
+}
+
+select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #94a3b8;
+  border-radius: 5px;
+}
+
+button {
+  width: 100%;
+  padding: 11px;
+  margin-top: 18px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1d4ed8;
+}
+
+button.reset {
+  background: #64748b;
+  margin-top: 8px;
+}
+
+.result {
+  margin-top: 20px;
+  padding: 12px;
+  background: #dcfce7;
+  border-radius: 5px;
+}
+
+.hint {
+  color: #64748b;
+  font-size: 13px;
+}
+
+footer {
+  margin-top: 25px;
+  padding: 15px;
+  text-align: center;
+  color: #64748b;
+}
+
+@media (max-width: 750px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Version 1 - Visibility fixes */
+
+.intro h2,
+.graph-panel h2,
+.controls h2 {
+  color: #1e293b;
+}
+
+select {
+  background-color: white;
+  color: #1e293b;
+  font-size: 15px;
+}
+
+.result h3 {
+  color: #1e293b;
+}
+
+.graph {
+  width: 100%;
+  height: auto;
+  min-height: 400px;
+  display: block;
+}
+
+.graph-panel {
+  overflow: hidden;
+}
+
+.weight {
+  fill: #0f172a;
+  font-size: 16px;
+  font-weight: bold;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: white;
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+
+.node-label {
+  fill: white;
+  font-size: 17px;
+  font-weight: bold;
+  text-anchor: middle;
+}
